@@ -21,21 +21,33 @@ backup_dir=/data/backups/postgres-backup/ # => location to put backup
 backup_date=`date +%y%m%d%H%M`            # => string to append to the name of the backup files
 number_of_days=7                          # => number of days to keep copies of databases
 
-# Get list of databases to back up, but exclude templates and postgres d'base
-#
-databases=`psql -lqt | grep -vE '^ +(template[0-9]+|postgres)? *\|' | cut -d'|' -f1| sed -e 's/ //g' -e '/^$/d'`
+# Database names are chosen by any role with CREATEDB and are used to build the
+# dump file path, so only names made of ASCII letters, digits and underscores
+# are backed up.
+is_safe_dbname() {
+  local LC_ALL=C
+  [[ $1 =~ ^[A-Za-z0-9_]+$ ]]
+}
+
+# Dumps hold the whole database: keep them readable by the backup account only
+umask 077
 
 # log the starting time
 echo [`date`] PostgreSQL backup START `date`
 
-# Backup each database
-for i in $databases; do
-outfile=$backup_dir$i-pg_dump.$backup_date.gz
-echo -n " –> Dumping $i to $outfile "
-pg_dump -Fc $i | gzip > $outfile
-outfilesize=`ls -lh $outfile | awk '{ print $5 }'`
-echo  " ($outfilesize) "
-done
+# Backup each database, but exclude templates and postgres d'base.
+# Names are read NUL-separated so that no character in a name can split it.
+while IFS= read -r -d '' i; do
+  if ! is_safe_dbname "$i"; then
+    printf ' –> Skipping database with unsafe name %q\n' "$i"
+    continue
+  fi
+  outfile="${backup_dir}${i}-pg_dump.${backup_date}.gz"
+  echo -n " –> Dumping $i to $outfile "
+  pg_dump -Fc --dbname="$i" | gzip > "$outfile"
+  outfilesize=`ls -lh "$outfile" | awk '{ print $5 }'`
+  echo  " ($outfilesize) "
+done < <(psql -X -d postgres -A -t -0 -c "SELECT datname FROM pg_catalog.pg_database WHERE datallowconn AND NOT datistemplate AND datname <> 'postgres' ORDER BY datname")
 
 # Delete old backups and trim the backup log file
 echo " –> Deleting backups older than $number_of_days days "
