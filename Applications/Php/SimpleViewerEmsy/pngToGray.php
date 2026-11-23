@@ -16,20 +16,25 @@ $height = hexdec(substr($pngFile, $posIHDR + 16, 8));
 //reduce the heights / widths to less than 1000. Correlates with viewer.php
 //NEEDS imagemagick installed. Can't use GD2 because GD2 doesn't work with 12-bit grayscale!
 //if no imagemagick, can try to comment out the lines here and in viewer.php, but hope that PHP has enough memory to process the large image.
+//each request gets its own private scratch file outside the web directory
+$scratch = null;
 if ($width > 2000 || $height > 2000) {
-	file_put_contents('image.png', hex2bin($pngFile));
+	$scratch = tempnam(sys_get_temp_dir(), "png");
+	file_put_contents($scratch, hex2bin($pngFile));
 	$width = $width / 4;
 	$height = $height / 4;
-	exec('"c:\imagick\convert.exe" "image.png" "-scale" "25%" "image.png"');
-	$pngFile = bin2hex(file_get_contents("image.png"));
+	exec('"c:\imagick\convert.exe" ' . escapeshellarg($scratch) . ' "-scale" "25%" ' . escapeshellarg("png:" . $scratch));
+	$pngFile = bin2hex(file_get_contents($scratch));
 	}
 if ($width > 1000 || $height > 1000) {
-	file_put_contents('image.png', hex2bin($pngFile));
+	if ($scratch === null) { $scratch = tempnam(sys_get_temp_dir(), "png"); }
+	file_put_contents($scratch, hex2bin($pngFile));
 	$width = $width / 2;
 	$height = $height / 2;
-	exec('"c:\imagick\convert.exe" "image.png" "-scale" "50%" "image.png"');
-	$pngFile = bin2hex(file_get_contents("image.png"));
+	exec('"c:\imagick\convert.exe" ' . escapeshellarg($scratch) . ' "-scale" "50%" ' . escapeshellarg("png:" . $scratch));
+	$pngFile = bin2hex(file_get_contents($scratch));
 	}
+if ($scratch !== null) { unlink($scratch); }
 
 $lastPos = 0;
 $data = "";
