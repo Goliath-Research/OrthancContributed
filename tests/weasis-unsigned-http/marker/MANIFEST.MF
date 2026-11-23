@@ -1,0 +1,6 @@
+Manifest-Version: 1.0
+Bundle-ManifestVersion: 2
+Bundle-SymbolicName: marker.substituted
+Bundle-Version: 1.0.0
+Bundle-Activator: marker.MarkerActivator
+Import-Package: org.osgi.framework
