@@ -62,7 +62,7 @@
 		<!-- Optional parameter. Allows to get plug-ins translations -->
 		<argument>-VMPweasis.i18n="http://10.1.20.127/pacs/weasis/bundle-i18n"</argument>
 		
-		<argument>$dicom:get -w http://10.1.20.127/pacs/weasisX.xml </argument>
+		<!-- loadWeasisX.php serves this file with a dicom:get argument for a manifest issued to one launch -->
 
 	</application-desc>
 </jnlp>
