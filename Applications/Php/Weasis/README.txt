@@ -16,6 +16,15 @@ Summary:
 Note: 
 1. The local addresses in the files attached are 10.1.20.127 (webserver with PHP) and 10.2.150.33:8042 (orthanc with default 8042 port for webserver).
 2. Weasis is installed into the webserver/pacs/weasis (which is where the jnlp points to).
+3. weasisX.jnlp requests all permissions, so every URL it downloads code or configuration from uses https.
+   The webserver must serve loadWeasisX.php, weasisX.jnlp, weasisX.xml and the whole pacs/weasis directory over
+   https with a certificate the workstation JRE trusts (for an IP address, the certificate needs that IP in its
+   subjectAltName). Do not change these URLs back to http: anyone on the network path could then replace
+   weasis-launcher.jar, felix.jar, conf/config.properties or a plug-in bundle, and that code would run with
+   full permissions.
+4. Deploy the signed weasis-launcher.jar and felix.jar from the Weasis distribution unchanged.
+5. Any absolute URL in pacs/weasis/conf/config.properties or ext-config.properties must also use https
+   (the default ${weasis.codebase.url} entries already do once weasis.codebase.url is https).
 
 Hope this helps with anybody who needs it.
 

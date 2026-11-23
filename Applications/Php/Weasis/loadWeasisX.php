@@ -128,7 +128,7 @@ fclose($fp);
 
 <script type="text/javascript">
 function loadAndClose() {
-	window.location = "http://10.1.20.127/pacs/weasisX.jnlp";
+	window.location = "https://10.1.20.127/pacs/weasisX.jnlp";
 	}
 </script>
 
