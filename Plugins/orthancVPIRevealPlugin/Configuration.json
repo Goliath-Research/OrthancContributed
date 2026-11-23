@@ -84,10 +84,17 @@
   "DicomAet" : "ORTHANC-VPI",
 
   // Check whether the called AET corresponds during a DICOM request
-  "DicomCheckCalledAet" : false,
+  "DicomCheckCalledAet" : true,
 
   // The DICOM port
   "DicomPort" : 4242,
+
+  // Only accept C-STORE from the modalities listed in "DicomModalities"
+  // below, and only from the host configured for each of them. Every
+  // PACS server that sends images to this client must be listed there.
+  // These two options require Orthanc 1.3.0 or later.
+  "DicomAlwaysAllowStore" : false,
+  "DicomCheckModalityHost" : true,
 
   // The default encoding that is assumed for DICOM files without
   // "SpecificCharacterSet" DICOM tag. The allowed values are "Ascii",
@@ -115,8 +122,12 @@
    * Security-related options for the HTTP server
    **/
 
-  // Whether remote hosts can connect to the HTTP server
-  "RemoteAccessAllowed" : true,
+  // Whether remote hosts can connect to the HTTP server. Orthanc
+  // Explorer is opened on this computer (http://localhost:8042), so
+  // remote access is not needed. Only set this to "true" if the HTTP
+  // port must be published, and then keep "AuthenticationEnabled" on,
+  // declare users below, and enable SSL (or put a TLS proxy in front).
+  "RemoteAccessAllowed" : false,
 
   // Whether or not SSL is enabled
   "SslEnabled" : false,
@@ -126,12 +137,14 @@
   "SslCertificate" : "certificate.pem",
 
   // Whether or not the password protection is enabled
-  "AuthenticationEnabled" : false,
+  "AuthenticationEnabled" : true,
 
   // The list of the registered users. Because Orthanc uses HTTP
   // Basic Authentication, the passwords are stored as plain text.
+  // No user is shipped: add your own user with a strong, unique
+  // password before opening Orthanc Explorer, e.g.
+  // "your-user-name" : "<your-strong-unique-password>"
   "RegisteredUsers" : {
-    // "alice" : "alicePassword"
   },
 
 

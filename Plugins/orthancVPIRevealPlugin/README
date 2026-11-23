@@ -33,6 +33,18 @@ Installation and usage
 Modify the Orthanc configuration file to find the DLL.
 Read Orthanc-VPI Manual.pdf for more details.
 
+The shipped Configuration.json only accepts HTTP connections from this
+computer and requires a password. No user is shipped: add your own user
+with a strong, unique password to "RegisteredUsers" before opening
+Orthanc Explorer. Do not set "RemoteAccessAllowed" to true unless the
+HTTP port must be published; if it is, keep authentication on and
+enable SSL (or put a TLS proxy in front of Orthanc).
+
+On the DICOM side, the called AET must match "DicomAet", and C-STORE is
+only accepted from the PACS servers listed in "DicomModalities", from
+the host configured for each. These source checks require Orthanc 1.3.0
+or later.
+
 Licensing
 ---------
 
