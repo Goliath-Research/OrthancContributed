@@ -3,8 +3,22 @@ var sliceUUID = []; //array to hold the instance UUIDs. The index of the element
 <?php
 $orthancAddress = "http://localhost:8042";
 
+function isOrthancId($value) {
+	return is_string($value) && preg_match('/^[0-9a-fA-F]+(-[0-9a-fA-F]+)*$/', $value) === 1;
+	}
+
+//DICOM text is attacker-controlled: encode it before writing it into the page
+function htmlText($value) {
+	return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+	}
+
+$series = isset($_GET['series']) ? $_GET['series'] : "";
+if (!isOrthancId($series)) {
+	exit;
+	}
+
 //get list of instances from Orthanc into $instance[]
-$instances = file_get_contents($orthancAddress . "/series/" . $_GET['series'] . "/instances"); //uses 0.8.3
+$instances = file_get_contents($orthancAddress . "/series/" . $series . "/instances"); //uses 0.8.3
 $seriesTags = explode("\n", $instances);
 //$u = 0;
 for ($i = 0; $seriesTags[$i] != ""; $i++) {
@@ -12,7 +26,12 @@ for ($i = 0; $seriesTags[$i] != ""; $i++) {
 	if (strpos($tags[0], "IndexInSeries") !== false) {
 		$instanceNumber = trim($tags[1],' ,');
 		$prevTags = explode(":", $seriesTags[$i - 1]); //UUID is before IndexInSeries
-		$UUID = trim($prevTags[1],' ",');
+		$candidateUUID = trim($prevTags[1],' ",');
+		//both values are written into inline script below, so only accept the expected formats
+		if (!ctype_digit($instanceNumber) || !isOrthancId($candidateUUID)) {
+			continue;
+			}
+		$UUID = $candidateUUID;
 
 //1 worker, multiple calls
 //		$sliceNumberUUID[$u] = $instanceNumber . "," . $UUID;
@@ -63,14 +82,14 @@ $patientName = file_get_contents($orthancAddress . "/instances/" . $UUID . "/con
 $patientID = file_get_contents($orthancAddress . "/instances/" . $UUID . "/content/0010-0020");
 $studyDesc = file_get_contents($orthancAddress . "/instances/" . $UUID . "/content/0008-1030");
 
-echo "<title>mcdcm - " . $patientName . "</title>\n";
+echo "<title>mcdcm - " . htmlText($patientName) . "</title>\n";
 ?>
 
 <body bgcolor="#111111"><center><font face="calibri" color="#ffffff">
 
 <?php
-echo "<font size=+1>" . $patientName . " " . $patientID . "</font><br>\n";
-echo $studyDesc . "<br>\n";
+echo "<font size=+1>" . htmlText($patientName) . " " . htmlText($patientID) . "</font><br>\n";
+echo htmlText($studyDesc) . "<br>\n";
 echo "<canvas id=\"myCanvas\" height=" . $height . " width=" . $width . "></canvas><br>\n";
 ?>
 

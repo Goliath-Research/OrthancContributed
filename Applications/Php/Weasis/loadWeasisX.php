@@ -1,6 +1,11 @@
 <?php
 $orthancAddress = "http://10.2.150.33:8042";
 
+//DICOM text is attacker-controlled: encode it before writing it into the XML
+function xmlAttr($value) {
+	return htmlspecialchars((string) $value, ENT_QUOTES | ENT_XML1 | ENT_SUBSTITUTE, 'UTF-8');
+	}
+
 //get and fill in patients
 $patient = file_get_contents($orthancAddress . "/patients/" . $_GET['PatientUUID']);
 $studies = $patient; //pass to next part to get studies
@@ -21,7 +26,7 @@ for ($p = 0; $patientTags[$p] != ""; $p++) {
 		}
 	}
 
-$xmlText = "<?xml version=\"1.0\" encoding=\"utf-8\" ?>\n<wado_query xmlns= \"http://www.weasis.org/xsd\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" wadoURL=\"" . $orthancAddress . "/instances/\" requireOnlySOPInstanceUID=\"false\" additionnalParameters=\"\" overrideDicomTagsList=\"\" >\n  <Patient PatientID=\"" . $patientID . "\" PatientName=\"" . $patientName . "\" PatientBirthDate=\"" . $patientBirthDate . "\" >\n";
+$xmlText = "<?xml version=\"1.0\" encoding=\"utf-8\" ?>\n<wado_query xmlns= \"http://www.weasis.org/xsd\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" wadoURL=\"" . xmlAttr($orthancAddress) . "/instances/\" requireOnlySOPInstanceUID=\"false\" additionnalParameters=\"\" overrideDicomTagsList=\"\" >\n  <Patient PatientID=\"" . xmlAttr($patientID) . "\" PatientName=\"" . xmlAttr($patientName) . "\" PatientBirthDate=\"" . xmlAttr($patientBirthDate) . "\" >\n";
 
 // get and fill study & series (nested loop)
 $cropStart = strpos($studies, "[");
@@ -55,7 +60,7 @@ for ($s = 0; $study[$s] != ""; $s++){
 			$studyTime = $studyTimeTags[3];
 			}
 		}
-	$xmlText = $xmlText . "    <Study StudyInstanceUID=\"" . $studyUID . "\" StudyDescription=\"" . $studyDescription . "\" StudyDate=\"" . $studyDate . "\" StudyTime=\"" . $studyTime . "\" >\n";
+	$xmlText = $xmlText . "    <Study StudyInstanceUID=\"" . xmlAttr($studyUID) . "\" StudyDescription=\"" . xmlAttr($studyDescription) . "\" StudyDate=\"" . xmlAttr($studyDate) . "\" StudyTime=\"" . xmlAttr($studyTime) . "\" >\n";
 
 	$cropStart = strpos($series, "[");
 	$cropEnd = strpos($series, "]");
@@ -88,7 +93,7 @@ for ($s = 0; $study[$s] != ""; $s++){
 				$modality = $modalityTags[3];
 				}
 			}
-		$xmlText = $xmlText . "      <Series SeriesInstanceUID=\"" . $seriesUID . "\" SeriesDescription=\"" . $seriesDescription . "\" SeriesNumber=\"" . $seriesNumber . "\" Modality=\"" . $modality . "\" >\n";
+		$xmlText = $xmlText . "      <Series SeriesInstanceUID=\"" . xmlAttr($seriesUID) . "\" SeriesDescription=\"" . xmlAttr($seriesDescription) . "\" SeriesNumber=\"" . xmlAttr($seriesNumber) . "\" Modality=\"" . xmlAttr($modality) . "\" >\n";
 
 		$cropStart = strpos($instances, "[");
 		$cropEnd = strpos($instances, "]");
@@ -112,7 +117,7 @@ for ($s = 0; $study[$s] != ""; $s++){
 					$instanceNumber = $instanceNumberTags[3];
 					}
 				}
-			$xmlText = $xmlText . "        <Instance SOPInstanceUID=\"" . $instanceUID . "\" InstanceNumber=\"" . $instanceNumber . "\" DirectDownloadFile=\"" . $instance[$u] . "/file\"/>\n";
+			$xmlText = $xmlText . "        <Instance SOPInstanceUID=\"" . xmlAttr($instanceUID) . "\" InstanceNumber=\"" . xmlAttr($instanceNumber) . "\" DirectDownloadFile=\"" . xmlAttr($instance[$u]) . "/file\"/>\n";
 			}
 		$xmlText = $xmlText . "</Series>\n";
 		}
