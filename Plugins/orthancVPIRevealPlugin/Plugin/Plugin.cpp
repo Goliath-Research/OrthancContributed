@@ -46,7 +46,7 @@ static OrthancPluginErrorCode CallbackCreateDicom(OrthancPluginRestOutput* outpu
 	else
 	{
 		/* Make POST request to create a new DICOM instance */
-		sprintf(info, "{\"PatientName\":\"Test\"}");
+		snprintf(info, sizeof(info), "{\"PatientName\":\"Test\"}");
 		OrthancPluginRestApiPost(context, &tmp, "/tools/create-dicom", info, strlen(info));
 
 		/**
@@ -74,17 +74,21 @@ static OrthancPluginErrorCode CallbackCreateDicom(OrthancPluginRestOutput* outpu
 }
 
 
+// True when snprintf wrote its whole output into a buffer of the given size.
+static bool formatFits(int written, size_t size)
+{
+	return written >= 0 && (size_t) written < size;
+}
+
 // Getting the tags of the created instance is done by a quick-and-dirty parsing of a JSON string.
-static void getDicomTag(char* json, char* tag, char* tagValue, unsigned int len)
+static void getDicomTag(char* json, const char* tag, char* tagValue, unsigned int len)
 {
 	char *jsonText = (char *)malloc((strlen(json) + 1) * sizeof(char));
 	strcpy(jsonText, json);
 
-	if (strlen(tag) < 100)
+	char tagText[100];
+	if (formatFits(snprintf(tagText, sizeof(tagText), "\"%s\" : \"", tag), sizeof(tagText)))
 	{
-		char tagText[100] = "\"";
-		strcat(tagText, tag);
-		strcat(tagText, "\" : \"");
 
 		//char buffer[10000];
 		//sprintf(buffer, "tagText[%d]=%s", strlen(tagText), tagText);
@@ -117,7 +121,7 @@ static bool createDir(char* dir)
 
 	if ( ret == 0)
 	{
-		sprintf(buffer, "    Directory %s created", dir);
+		snprintf(buffer, sizeof(buffer), "    Directory %s created", dir);
 		OrthancPluginLogWarning(context, buffer);
 		return true;
 	}
@@ -131,30 +135,33 @@ static bool createDir(char* dir)
 		return true;
 	}
 
-	sprintf(buffer, "--- Problem creating directory %s", dir);
+	snprintf(buffer, sizeof(buffer), "--- Problem creating directory %s", dir);
 	OrthancPluginLogWarning(context, buffer);
 	OrthancPluginExtendOrthancExplorer(context, buffer);
 	OrthancPluginExtendOrthancExplorer(context, buffer);
 	return false;
 }
 
-static bool createDir(char* topDir, char* patientName, char* studyDescription, char* seriesDescription)
+static bool appendDir(char* dir, size_t size, const char* part)
+{
+	size_t used = strlen(dir);
+	return formatFits(snprintf(dir + used, size - used, "/%s", part), size - used);
+}
+
+static bool createDir(const char* topDir, char* patientName, char* studyDescription, char* seriesDescription)
 {
 	char dir[1000];
 
-	strcpy(dir, topDir);
+	if (!formatFits(snprintf(dir, sizeof(dir), "%s", topDir), sizeof(dir))) return false;
 	if (!createDir(dir)) return false;
 
-	strcat(dir, "/");
-	strcat(dir, patientName);
+	if (!appendDir(dir, sizeof(dir), patientName)) return false;
 	if (!createDir(dir)) return false;
 
-	strcat(dir, "/");
-	strcat(dir, studyDescription);
+	if (!appendDir(dir, sizeof(dir), studyDescription)) return false;
 	if (!createDir(dir)) return false;
 
-	strcat(dir, "/");
-	strcat(dir, seriesDescription);
+	if (!appendDir(dir, sizeof(dir), seriesDescription)) return false;
 	if (!createDir(dir)) return false;
 
 	return true;
@@ -166,13 +173,13 @@ void cdTop(char* configurationPath)
 	char buffer[1000];
 
 	// Change directory to the top of the data storage
-	sprintf(buffer, "cd %s", configurationPath);
+	snprintf(buffer, sizeof(buffer), "cd %s", configurationPath);
 	//OrthancPluginLogWarning(context, buffer);
 	int ret = _chdir(configurationPath);
 
 	if (ret != 0)
 	{
-		sprintf(buffer, "--- ERROR: _chdir fails");
+		snprintf(buffer, sizeof(buffer), "--- ERROR: _chdir fails");
 		OrthancPluginLogWarning(context, buffer);
 	}
 }
@@ -187,12 +194,12 @@ void logCwd()
 
 	if (_getcwd(cwd, maxDir) == NULL)
 	{
-		sprintf(buffer, "--- ERROR: _getcwd fails");
+		snprintf(buffer, sizeof(buffer), "--- ERROR: _getcwd fails");
 		OrthancPluginLogWarning(context, buffer);
 	}
 	else
 	{
-		sprintf(buffer, "+++ CWD = %s", cwd);
+		snprintf(buffer, sizeof(buffer), "+++ CWD = %s", cwd);
 		OrthancPluginLogWarning(context, buffer);
 	}
 }
@@ -233,7 +240,7 @@ OrthancPluginErrorCode OnStoredCallback(OrthancPluginDicomInstance* instance,
   char seriesDir[maxDir];
   char location[maxDir];
 
-  static char previousSeriesDir[maxLen];
+  static char previousSeriesDir[maxDir];
   static int count;
   int ret;
   OrthancPluginErrorCode returnCode;
@@ -241,7 +248,7 @@ OrthancPluginErrorCode OnStoredCallback(OrthancPluginDicomInstance* instance,
   FILE* fp;
   char* json;
 
-  sprintf(buffer, "+++ OnStoredCallback: Received DICOM instance of size %d and ID %s from origin %d (AET %s)", 
+  snprintf(buffer, sizeof(buffer), "+++ OnStoredCallback: Received DICOM instance of size %d and ID %s from origin %d (AET %s)", 
           (int) OrthancPluginGetInstanceSize(context, instance), instanceId, 
           OrthancPluginGetInstanceOrigin(context, instance),
           OrthancPluginGetInstanceRemoteAet(context, instance));
@@ -257,13 +264,13 @@ OrthancPluginErrorCode OnStoredCallback(OrthancPluginDicomInstance* instance,
   getDicomTag(json, "SeriesNumber", seriesNumber, maxLen);
   getDicomTag(json, "SeriesDescription", seriesDescription, maxLen);
 
-  sprintf(buffer, "    PatientName=%s", patientName);
+  snprintf(buffer, sizeof(buffer), "    PatientName=%s", patientName);
   OrthancPluginLogWarning(context, buffer);
-  sprintf(buffer, "    StudyDescription=%s", studyDescription);
+  snprintf(buffer, sizeof(buffer), "    StudyDescription=%s", studyDescription);
   OrthancPluginLogWarning(context, buffer);
-  sprintf(buffer, "    SeriesNumber=%s", seriesNumber);
+  snprintf(buffer, sizeof(buffer), "    SeriesNumber=%s", seriesNumber);
   OrthancPluginLogWarning(context, buffer);
-  sprintf(buffer, "    SeriesDescription=%s", seriesDescription);
+  snprintf(buffer, sizeof(buffer), "    SeriesDescription=%s", seriesDescription);
   OrthancPluginLogWarning(context, buffer);
 
   replaceIllegalChars(patientName);
@@ -271,13 +278,16 @@ OrthancPluginErrorCode OnStoredCallback(OrthancPluginDicomInstance* instance,
   replaceIllegalChars(seriesNumber);
   replaceIllegalChars(seriesDescription);
 
-  strcpy(seriesDir, seriesNumber);
-  strcat(seriesDir, "-");
-  strcat(seriesDir, seriesDescription);
+  if (!formatFits(snprintf(seriesDir, sizeof(seriesDir), "%s-%s", seriesNumber, seriesDescription), sizeof(seriesDir)))
+  {
+	  OrthancPluginLogError(context, "--- Series directory name is too long");
+	  OrthancPluginFreeString(context, json);
+	  return OrthancPluginErrorCode_CannotWriteFile;
+  }
 
-  sprintf(buffer, "    previousSeriesDir=%s", previousSeriesDir);
+  snprintf(buffer, sizeof(buffer), "    previousSeriesDir=%s", previousSeriesDir);
   OrthancPluginLogWarning(context, buffer);
-  sprintf(buffer, "    seriesDir=%s", seriesDir);
+  snprintf(buffer, sizeof(buffer), "    seriesDir=%s", seriesDir);
   OrthancPluginLogWarning(context, buffer);
 
   if (strcmp(previousSeriesDir, seriesDir) != 0)
@@ -287,13 +297,13 @@ OrthancPluginErrorCode OnStoredCallback(OrthancPluginDicomInstance* instance,
   {
     printf("[%s]\n", json);
 
-	sprintf(buffer, "    PatientName=%s", patientName);
+	snprintf(buffer, sizeof(buffer), "    PatientName=%s", patientName);
 	OrthancPluginLogWarning(context, buffer);
-	sprintf(buffer, "    StudyDescription=%s", studyDescription);
+	snprintf(buffer, sizeof(buffer), "    StudyDescription=%s", studyDescription);
 	OrthancPluginLogWarning(context, buffer);
-	sprintf(buffer, "    SeriesNumber=%s", seriesNumber);
+	snprintf(buffer, sizeof(buffer), "    SeriesNumber=%s", seriesNumber);
 	OrthancPluginLogWarning(context, buffer);
-	sprintf(buffer, "    SeriesDescription=%s", seriesDescription);
+	snprintf(buffer, sizeof(buffer), "    SeriesDescription=%s", seriesDescription);
 	OrthancPluginLogWarning(context, buffer);
   }
 
@@ -305,33 +315,33 @@ OrthancPluginErrorCode OnStoredCallback(OrthancPluginDicomInstance* instance,
   cdTop(configurationPath);	// Change directory to the top of the data storage
   logCwd();					// log the current working directory
 
-  strcpy(location, "VPI_Storage/");
-  strcat(location, patientName);
-  strcat(location, "/");
-  strcat(location, studyDescription);
-  strcat(location, "/");
-  strcat(location, seriesDir);
+  if (!formatFits(snprintf(location, sizeof(location), "VPI_Storage/%s/%s/%s", patientName, studyDescription, seriesDir), sizeof(location)))
+  {
+	  OrthancPluginLogError(context, "--- Storage location is too long");
+	  OrthancPluginFreeString(context, json);
+	  return OrthancPluginErrorCode_CannotWriteFile;
+  }
 
-  sprintf(buffer, "+++ Writing instance %s\\%d.dcm", location, count);
+  snprintf(buffer, sizeof(buffer), "+++ Writing instance %s\\%d.dcm", location, count);
   OrthancPluginLogWarning(context, buffer);
 
   if (createDir("VPI_Storage", patientName, studyDescription, seriesDir))
   {
 	  // Change directory
-	  sprintf(buffer, "cd %s", location);
+	  snprintf(buffer, sizeof(buffer), "cd %s", location);
 	  OrthancPluginLogWarning(context, buffer);
 	  ret = _chdir(location);
 
 	  if (ret != 0)
 	  {
-		  sprintf(buffer, "--- ERROR: _chdir fails");
+		  snprintf(buffer, sizeof(buffer), "--- ERROR: _chdir fails");
 		  OrthancPluginLogWarning(context, buffer);
 	  }
 
 	  logCwd();   // log the current working directory
 
 	  // write DICOM file to disc
-	  sprintf(buffer, "%d.dcm", count);
+	  snprintf(buffer, sizeof(buffer), "%d.dcm", count);
 	  fp = fopen(buffer, "wb");
 	  fwrite(OrthancPluginGetInstanceData(context, instance),
 		  (size_t)OrthancPluginGetInstanceSize(context, instance), 1, fp);
@@ -344,7 +354,7 @@ OrthancPluginErrorCode OnStoredCallback(OrthancPluginDicomInstance* instance,
 	  returnCode = OrthancPluginErrorCode_CannotWriteFile;
   }
 
-  strcpy(previousSeriesDir, seriesDir);
+  snprintf(previousSeriesDir, sizeof(previousSeriesDir), "%s", seriesDir);
   count++;
   OrthancPluginLogWarning(context, ">>> cont incremented");
   OrthancPluginFreeString(context, json);
@@ -362,16 +372,20 @@ ORTHANC_PLUGINS_API OrthancPluginErrorCode OnChangeCallback(OrthancPluginChangeT
   char info[1024];
   OrthancPluginMemoryBuffer tmp;
 
-  sprintf(info, "+++ OnChangeCallback: Change %d on resource %s of type %d", changeType, resourceId, resourceType);
+  snprintf(info, sizeof(info), "+++ OnChangeCallback: Change %d on resource %s of type %d", changeType, resourceId, resourceType);
   OrthancPluginLogWarning(context, info);
 
   if (changeType == OrthancPluginChangeType_NewInstance)
   {
-    sprintf(info, "/instances/%s/metadata/AnonymizedFrom", resourceId);
+    snprintf(info, sizeof(info), "/instances/%s/metadata/AnonymizedFrom", resourceId);
     if (OrthancPluginRestApiGet(context, &tmp, info) == 0)
     {
-      sprintf(info, "  Instance %s comes from the anonymization of instance", resourceId);
-      strncat(info, (const char*) tmp.data, tmp.size);
+      snprintf(info, sizeof(info), "  Instance %s comes from the anonymization of instance", resourceId);
+      size_t used = strlen(info);
+      size_t room = sizeof(info) - used - 1;
+      size_t n = tmp.size < room ? (size_t) tmp.size : room;
+      memcpy(info + used, tmp.data, n);
+      info[used + n] = '\0';
       OrthancPluginLogWarning(context, info);
       OrthancPluginFreeMemoryBuffer(context, &tmp);
     }
@@ -401,7 +415,7 @@ extern "C"
 		/* Check the version of the Orthanc core */
 		if (OrthancPluginCheckVersion(c) == 0)
 		{
-			sprintf(info, "Your version of Orthanc (%s) must be above %d.%d.%d to run this plugin",
+			snprintf(info, sizeof(info), "Your version of Orthanc (%s) must be above %d.%d.%d to run this plugin",
 				c->orthancVersion,
 				ORTHANC_PLUGINS_MINIMAL_MAJOR_NUMBER,
 				ORTHANC_PLUGINS_MINIMAL_MINOR_NUMBER,
@@ -411,21 +425,21 @@ extern "C"
 		}
 
 		/* Print some information about Orthanc */
-		sprintf(info, "The version of Orthanc is '%s'", context->orthancVersion);
+		snprintf(info, sizeof(info), "The version of Orthanc is '%s'", context->orthancVersion);
 		OrthancPluginLogWarning(context, info);
 
 		s = OrthancPluginGetOrthancPath(context);
-		sprintf(info, "  Path to Orthanc: %s", s);
+		snprintf(info, sizeof(info), "  Path to Orthanc: %s", s);
 		OrthancPluginLogWarning(context, info);
 		OrthancPluginFreeString(context, s);
 
 		s = OrthancPluginGetOrthancDirectory(context);
-		sprintf(info, "  Directory of Orthanc: %s", s);
+		snprintf(info, sizeof(info), "  Directory of Orthanc: %s", s);
 		OrthancPluginLogWarning(context, info);
 		OrthancPluginFreeString(context, s);
 
 		s = OrthancPluginGetConfiguration(context);
-		sprintf(info, "  Content of the configuration file:\n");
+		snprintf(info, sizeof(info), "  Content of the configuration file:\n");
 		OrthancPluginLogWarning(context, info);
 		OrthancPluginLogWarning(context, s);
 		OrthancPluginFreeString(context, s);
@@ -435,7 +449,7 @@ extern "C"
 		for (i = 0; i < counter; i++)
 		{
 			s = OrthancPluginGetCommandLineArgument(context, i);
-			sprintf(info, "  Command-line argument %d: \"%s\"", i, s);
+			snprintf(info, sizeof(info), "  Command-line argument %d: \"%s\"", i, s);
 			OrthancPluginLogWarning(context, info);
 			OrthancPluginFreeString(context, s);
 		}
@@ -451,7 +465,7 @@ extern "C"
 		OrthancPluginLogWarning(context, "VPI Plugin: Declare properties");
 		OrthancPluginSetRootUri(context, "/plugin/hello");
 		OrthancPluginSetDescription(context, "The VPI Reveal plugin intercepts any retrieved DICOM records and writes them into a hierarchical structure for use by VIP Reveal.");
-		sprintf(info, "alert('The VPI Reveal plugin %s has been loaded.');", OrthancPluginGetVersion());
+		snprintf(info, sizeof(info), "alert('The VPI Reveal plugin %s has been loaded.');", OrthancPluginGetVersion());
 		OrthancPluginExtendOrthancExplorer(context, info);
 
 		/* Make REST requests to the built-in Orthanc API */
