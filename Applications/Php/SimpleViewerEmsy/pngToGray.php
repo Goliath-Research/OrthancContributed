@@ -13,22 +13,33 @@ $posIEND = strpos($pngFile, "49454e44");
 $width = hexdec(substr($pngFile, $posIHDR + 8, 8));
 $height = hexdec(substr($pngFile, $posIHDR + 16, 8));
 
+//scales the PNG through imagemagick's stdin/stdout so the image never touches the disk (this directory is served by the web server).
+//returns the original PNG unchanged if imagemagick could not be run.
+function scalePng($png, $percent) {
+	$process = proc_open('"c:\imagick\convert.exe" "png:-" "-scale" "' . $percent . '%" "png:-"', array(0 => array("pipe", "r"), 1 => array("pipe", "w")), $pipes);
+	if (!is_resource($process)) {
+		return $png;
+		}
+	@fwrite($pipes[0], $png);
+	fclose($pipes[0]);
+	$scaled = stream_get_contents($pipes[1]);
+	fclose($pipes[1]);
+	proc_close($process);
+	return ($scaled === false || $scaled === "") ? $png : $scaled;
+	}
+
 //reduce the heights / widths to less than 1000. Correlates with viewer.php
 //NEEDS imagemagick installed. Can't use GD2 because GD2 doesn't work with 12-bit grayscale!
 //if no imagemagick, can try to comment out the lines here and in viewer.php, but hope that PHP has enough memory to process the large image.
 if ($width > 2000 || $height > 2000) {
-	file_put_contents('image.png', hex2bin($pngFile));
 	$width = $width / 4;
 	$height = $height / 4;
-	exec('"c:\imagick\convert.exe" "image.png" "-scale" "25%" "image.png"');
-	$pngFile = bin2hex(file_get_contents("image.png"));
+	$pngFile = bin2hex(scalePng(hex2bin($pngFile), 25));
 	}
 if ($width > 1000 || $height > 1000) {
-	file_put_contents('image.png', hex2bin($pngFile));
 	$width = $width / 2;
 	$height = $height / 2;
-	exec('"c:\imagick\convert.exe" "image.png" "-scale" "50%" "image.png"');
-	$pngFile = bin2hex(file_get_contents("image.png"));
+	$pngFile = bin2hex(scalePng(hex2bin($pngFile), 50));
 	}
 
 $lastPos = 0;
