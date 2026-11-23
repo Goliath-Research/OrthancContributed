@@ -109,7 +109,7 @@ static void getDicomTag(char* json, char* tag, char* tagValue, unsigned int len)
 	free(jsonText);
 }
 
-static bool createDir(char* dir)
+static bool createDir(const char* dir)
 {
 	char buffer[1000];
 	int ret = _mkdir(dir);
@@ -117,7 +117,7 @@ static bool createDir(char* dir)
 
 	if ( ret == 0)
 	{
-		sprintf(buffer, "    Directory %s created", dir);
+		snprintf(buffer, sizeof(buffer), "    Directory %s created", dir);
 		OrthancPluginLogWarning(context, buffer);
 		return true;
 	}
@@ -131,76 +131,86 @@ static bool createDir(char* dir)
 		return true;
 	}
 
-	sprintf(buffer, "--- Problem creating directory %s", dir);
+	snprintf(buffer, sizeof(buffer), "--- Problem creating directory %s", dir);
 	OrthancPluginLogWarning(context, buffer);
 	OrthancPluginExtendOrthancExplorer(context, buffer);
 	OrthancPluginExtendOrthancExplorer(context, buffer);
 	return false;
 }
 
-static bool createDir(char* topDir, char* patientName, char* studyDescription, char* seriesDescription)
+static bool appendComponent(char* dir, size_t dirSize, const char* component)
 {
-	char dir[1000];
+	size_t used = strlen(dir);
+	int ret = snprintf(dir + used, dirSize - used, "/%s", component);
+	return ret >= 0 && (size_t)ret < dirSize - used;
+}
 
-	strcpy(dir, topDir);
+// Creates storageRoot/patientName/studyDescription/seriesDir and returns that
+// absolute path in dir. Every component must already have passed
+// sanitizePathComponent.
+static bool createDir(const char* storageRoot, const char* patientName, const char* studyDescription,
+	const char* seriesDir, char* dir, size_t dirSize)
+{
+	int ret = snprintf(dir, dirSize, "%s", storageRoot);
+	if (ret < 0 || (size_t)ret >= dirSize) return false;
 	if (!createDir(dir)) return false;
 
-	strcat(dir, "/");
-	strcat(dir, patientName);
+	if (!appendComponent(dir, dirSize, patientName)) return false;
 	if (!createDir(dir)) return false;
 
-	strcat(dir, "/");
-	strcat(dir, studyDescription);
+	if (!appendComponent(dir, dirSize, studyDescription)) return false;
 	if (!createDir(dir)) return false;
 
-	strcat(dir, "/");
-	strcat(dir, seriesDescription);
+	if (!appendComponent(dir, dirSize, seriesDir)) return false;
 	if (!createDir(dir)) return false;
 
 	return true;
 }
 
 
-void cdTop(char* configurationPath)
+// The storage root is the absolute directory "VPI_Storage" next to the
+// Orthanc configuration file.
+static bool getStorageRoot(char* root, size_t rootSize)
 {
-	char buffer[1000];
+	char* configurationPath = OrthancPluginGetConfigurationPath(context);
+	if (configurationPath == NULL)
+		return false;
 
-	// Change directory to the top of the data storage
-	sprintf(buffer, "cd %s", configurationPath);
-	//OrthancPluginLogWarning(context, buffer);
-	int ret = _chdir(configurationPath);
+	char* lastBackslash = strrchr(configurationPath, '\\');
+	char* lastSlash = strrchr(configurationPath, '/');
+	char* lastSeparator = (lastBackslash > lastSlash) ? lastBackslash : lastSlash;
 
-	if (ret != 0)
+	int ret;
+	if (lastSeparator != NULL)
 	{
-		sprintf(buffer, "--- ERROR: _chdir fails");
-		OrthancPluginLogWarning(context, buffer);
-	}
-}
-
-
-void logCwd()
-{
-	// log the current working directory   
-	const unsigned int maxDir = 1000;
-	char cwd[maxDir];
-	char buffer[maxDir];
-
-	if (_getcwd(cwd, maxDir) == NULL)
-	{
-		sprintf(buffer, "--- ERROR: _getcwd fails");
-		OrthancPluginLogWarning(context, buffer);
+		lastSeparator[0] = '\0';		// remove file name
+		ret = snprintf(root, rootSize, "%s/VPI_Storage", configurationPath);
 	}
 	else
 	{
-		sprintf(buffer, "+++ CWD = %s", cwd);
-		OrthancPluginLogWarning(context, buffer);
+		char cwd[1000];
+		if (_getcwd(cwd, sizeof(cwd)) == NULL)
+		{
+			OrthancPluginFreeString(context, configurationPath);
+			return false;
+		}
+		ret = snprintf(root, rootSize, "%s/VPI_Storage", cwd);
 	}
+
+	OrthancPluginFreeString(context, configurationPath);
+	return ret >= 0 && (size_t)ret < rootSize;
 }
 
 void replaceIllegalChars(char* text)
 {
 	for (size_t i = 0; i < strlen(text); i++)
 	{
+		if ((unsigned char)text[i] < 0x20)
+		{
+			text[i] = '_';
+			continue;
+		}
+
 		switch (text[i])
 		{
 		case '\\':
@@ -218,6 +228,22 @@ void replaceIllegalChars(char* text)
 	}
 }
 
+// Makes text usable as exactly one directory name below the storage root.
+// Returns false for an empty name or one made only of dots and spaces, since
+// Windows resolves those to the current or the parent directory.
+static bool sanitizePathComponent(char* text)
+{
+	replaceIllegalChars(text);
+
+	for (size_t i = 0; text[i] != '\0'; i++)
+	{
+		if (text[i] != '.' && text[i] != ' ')
+			return true;
+	}
+
+	return false;
+}
+
 OrthancPluginErrorCode OnStoredCallback(OrthancPluginDicomInstance* instance,
 	const char* instanceId)
 {
@@ -232,8 +258,10 @@ OrthancPluginErrorCode OnStoredCallback(OrthancPluginDicomInstance* instance,
   char seriesDescription[maxLen];
   char seriesDir[maxDir];
   char location[maxDir];
+  char storageRoot[maxDir];
+  char filePath[maxDir];
 
-  static char previousSeriesDir[maxLen];
+  static char previousSeriesDir[maxDir];
   static int count;
   int ret;
   OrthancPluginErrorCode returnCode;
@@ -266,14 +294,21 @@ OrthancPluginErrorCode OnStoredCallback(OrthancPluginDicomInstance* instance,
   sprintf(buffer, "    SeriesDescription=%s", seriesDescription);
   OrthancPluginLogWarning(context, buffer);
 
-  replaceIllegalChars(patientName);
-  replaceIllegalChars(studyDescription);
   replaceIllegalChars(seriesNumber);
   replaceIllegalChars(seriesDescription);
 
   strcpy(seriesDir, seriesNumber);
   strcat(seriesDir, "-");
   strcat(seriesDir, seriesDescription);
+
+  if (!sanitizePathComponent(patientName) ||
+	  !sanitizePathComponent(studyDescription) ||
+	  !sanitizePathComponent(seriesDir))
+  {
+	  OrthancPluginLogError(context, "--- PatientName, StudyDescription or series folder name is not a valid directory name. Instance not written.");
+	  OrthancPluginFreeString(context, json);
+	  return OrthancPluginErrorCode_CannotWriteFile;
+  }
 
   sprintf(buffer, "    previousSeriesDir=%s", previousSeriesDir);
   OrthancPluginLogWarning(context, buffer);
@@ -297,46 +332,32 @@ OrthancPluginErrorCode OnStoredCallback(OrthancPluginDicomInstance* instance,
 	OrthancPluginLogWarning(context, buffer);
   }
 
-  // Get directory to the top of the data storage
-  char* configurationPath = OrthancPluginGetConfigurationPath(context);
-  char* lastSlash = strrchr(configurationPath, '\\');
-  lastSlash[0] = '\0';		// remove file name
-
-  cdTop(configurationPath);	// Change directory to the top of the data storage
-  logCwd();					// log the current working directory
-
-  strcpy(location, "VPI_Storage/");
-  strcat(location, patientName);
-  strcat(location, "/");
-  strcat(location, studyDescription);
-  strcat(location, "/");
-  strcat(location, seriesDir);
-
-  sprintf(buffer, "+++ Writing instance %s\\%d.dcm", location, count);
-  OrthancPluginLogWarning(context, buffer);
-
-  if (createDir("VPI_Storage", patientName, studyDescription, seriesDir))
+  if (!getStorageRoot(storageRoot, maxDir))
   {
-	  // Change directory
-	  sprintf(buffer, "cd %s", location);
+	  OrthancPluginLogError(context, "--- Cannot determine the VPI_Storage directory.");
+	  returnCode = OrthancPluginErrorCode_CannotWriteFile;
+  }
+  else if (createDir(storageRoot, patientName, studyDescription, seriesDir, location, maxDir))
+  {
+	  ret = snprintf(filePath, maxDir, "%s/%d.dcm", location, count);
+
+	  sprintf(buffer, "+++ Writing instance %s", filePath);
 	  OrthancPluginLogWarning(context, buffer);
-	  ret = _chdir(location);
-
-	  if (ret != 0)
-	  {
-		  sprintf(buffer, "--- ERROR: _chdir fails");
-		  OrthancPluginLogWarning(context, buffer);
-	  }
-
-	  logCwd();   // log the current working directory
 
 	  // write DICOM file to disc
-	  sprintf(buffer, "%d.dcm", count);
-	  fp = fopen(buffer, "wb");
-	  fwrite(OrthancPluginGetInstanceData(context, instance),
-		  (size_t)OrthancPluginGetInstanceSize(context, instance), 1, fp);
-	  fclose(fp);
-	  returnCode = OrthancPluginErrorCode_Success;
+	  fp = (ret >= 0 && (unsigned int)ret < maxDir) ? fopen(filePath, "wb") : NULL;
+	  if (fp != NULL)
+	  {
+		  fwrite(OrthancPluginGetInstanceData(context, instance),
+			  (size_t)OrthancPluginGetInstanceSize(context, instance), 1, fp);
+		  fclose(fp);
+		  returnCode = OrthancPluginErrorCode_Success;
+	  }
+	  else
+	  {
+		  OrthancPluginLogError(context, "--- Failure to open the DICOM file for writing.");
+		  returnCode = OrthancPluginErrorCode_CannotWriteFile;
+	  }
   }
   else
   {
@@ -349,8 +370,6 @@ OrthancPluginErrorCode OnStoredCallback(OrthancPluginDicomInstance* instance,
   OrthancPluginLogWarning(context, ">>> cont incremented");
   OrthancPluginFreeString(context, json);
 
-  cdTop(configurationPath);	// Change directory back to the top of the data storage
-  logCwd();   // log the current working directory
   return returnCode;
 }
 
