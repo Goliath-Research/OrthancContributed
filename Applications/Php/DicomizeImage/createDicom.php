@@ -5,8 +5,10 @@ $orthanc = "http://localhost:8042";
 
 //Function for encode png to mime. I modified this to hard-select $_FILES.
 function data_uri($mime) {  
-	imagepng(imagecreatefromstring(file_get_contents($_FILES["file"]["tmp_name"])), "scanned.png");
-	$contents = file_get_contents("scanned.png");
+	//encode in memory: a file written here would be served by the web server.
+	ob_start();
+	imagepng(imagecreatefromstring(file_get_contents($_FILES["file"]["tmp_name"])));
+	$contents = ob_get_clean();
 	$base64   = base64_encode($contents); 
 	return ('data:' . $mime . ';base64,' . $base64);
 	}
