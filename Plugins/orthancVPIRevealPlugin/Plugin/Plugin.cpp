@@ -95,8 +95,6 @@ static void getDicomTag(char* json, char* tag, char* tagValue, unsigned int len)
 		value = value + offset;
 		char* eos = strchr(value, '\"');
 		eos[0] = '\0';
-		//sprintf(buffer, "value[%d]=%s", strlen(value), value);
-		//OrthancPluginLogWarning(context, buffer);
 
 		if (strlen(value) < len-1)
 			strcpy(tagValue, value);
@@ -117,8 +115,6 @@ static bool createDir(char* dir)
 
 	if ( ret == 0)
 	{
-		sprintf(buffer, "    Directory %s created", dir);
-		OrthancPluginLogWarning(context, buffer);
 		return true;
 	}
 
@@ -131,10 +127,9 @@ static bool createDir(char* dir)
 		return true;
 	}
 
-	sprintf(buffer, "--- Problem creating directory %s", dir);
+	// The path holds patient and study text, so it is left out of the log.
+	sprintf(buffer, "--- Problem creating a VPI_Storage directory (errno %d)", (int) err);
 	OrthancPluginLogWarning(context, buffer);
-	OrthancPluginExtendOrthancExplorer(context, buffer);
-	OrthancPluginExtendOrthancExplorer(context, buffer);
 	return false;
 }
 
@@ -177,25 +172,6 @@ void cdTop(char* configurationPath)
 	}
 }
 
-
-void logCwd()
-{
-	// log the current working directory   
-	const unsigned int maxDir = 1000;
-	char cwd[maxDir];
-	char buffer[maxDir];
-
-	if (_getcwd(cwd, maxDir) == NULL)
-	{
-		sprintf(buffer, "--- ERROR: _getcwd fails");
-		OrthancPluginLogWarning(context, buffer);
-	}
-	else
-	{
-		sprintf(buffer, "+++ CWD = %s", cwd);
-		OrthancPluginLogWarning(context, buffer);
-	}
-}
 
 void replaceIllegalChars(char* text)
 {
@@ -248,24 +224,16 @@ OrthancPluginErrorCode OnStoredCallback(OrthancPluginDicomInstance* instance,
   OrthancPluginLogWarning(context, buffer);  
 
   json = OrthancPluginGetInstanceSimplifiedJson(context, instance);
-  //OrthancPluginLogWarning(context, "+++ json=");
-  //OrthancPluginLogWarning(context, json);
 
   // Getting the tags of the created instance is done by a quick-and-dirty parsing of a JSON string.
   getDicomTag(json, "PatientName", patientName, maxLen);
   getDicomTag(json, "StudyDescription", studyDescription, maxLen);
   getDicomTag(json, "SeriesNumber", seriesNumber, maxLen);
   getDicomTag(json, "SeriesDescription", seriesDescription, maxLen);
+  OrthancPluginFreeString(context, json);
 
-  sprintf(buffer, "    PatientName=%s", patientName);
-  OrthancPluginLogWarning(context, buffer);
-  sprintf(buffer, "    StudyDescription=%s", studyDescription);
-  OrthancPluginLogWarning(context, buffer);
-  sprintf(buffer, "    SeriesNumber=%s", seriesNumber);
-  OrthancPluginLogWarning(context, buffer);
-  sprintf(buffer, "    SeriesDescription=%s", seriesDescription);
-  OrthancPluginLogWarning(context, buffer);
-
+  // Patient, study and series text, and the VPI_Storage paths built from it,
+  // must not reach the console or the Orthanc log. Log the instance ID only.
   replaceIllegalChars(patientName);
   replaceIllegalChars(studyDescription);
   replaceIllegalChars(seriesNumber);
@@ -275,25 +243,12 @@ OrthancPluginErrorCode OnStoredCallback(OrthancPluginDicomInstance* instance,
   strcat(seriesDir, "-");
   strcat(seriesDir, seriesDescription);
 
-  sprintf(buffer, "    previousSeriesDir=%s", previousSeriesDir);
-  OrthancPluginLogWarning(context, buffer);
-  sprintf(buffer, "    seriesDir=%s", seriesDir);
-  OrthancPluginLogWarning(context, buffer);
-
   if (strcmp(previousSeriesDir, seriesDir) != 0)
 	  count = 1;	// new series
 
   if (count == 1)	// Only for the first DICOM instance of the series
   {
-    printf("[%s]\n", json);
-
-	sprintf(buffer, "    PatientName=%s", patientName);
-	OrthancPluginLogWarning(context, buffer);
-	sprintf(buffer, "    StudyDescription=%s", studyDescription);
-	OrthancPluginLogWarning(context, buffer);
-	sprintf(buffer, "    SeriesNumber=%s", seriesNumber);
-	OrthancPluginLogWarning(context, buffer);
-	sprintf(buffer, "    SeriesDescription=%s", seriesDescription);
+	sprintf(buffer, "    Instance %s starts a new series", instanceId);
 	OrthancPluginLogWarning(context, buffer);
   }
 
@@ -303,7 +258,6 @@ OrthancPluginErrorCode OnStoredCallback(OrthancPluginDicomInstance* instance,
   lastSlash[0] = '\0';		// remove file name
 
   cdTop(configurationPath);	// Change directory to the top of the data storage
-  logCwd();					// log the current working directory
 
   strcpy(location, "VPI_Storage/");
   strcat(location, patientName);
@@ -312,14 +266,11 @@ OrthancPluginErrorCode OnStoredCallback(OrthancPluginDicomInstance* instance,
   strcat(location, "/");
   strcat(location, seriesDir);
 
-  sprintf(buffer, "+++ Writing instance %s\\%d.dcm", location, count);
+  sprintf(buffer, "+++ Writing instance %s as file %d.dcm", instanceId, count);
   OrthancPluginLogWarning(context, buffer);
 
   if (createDir("VPI_Storage", patientName, studyDescription, seriesDir))
   {
-	  // Change directory
-	  sprintf(buffer, "cd %s", location);
-	  OrthancPluginLogWarning(context, buffer);
 	  ret = _chdir(location);
 
 	  if (ret != 0)
@@ -327,8 +278,6 @@ OrthancPluginErrorCode OnStoredCallback(OrthancPluginDicomInstance* instance,
 		  sprintf(buffer, "--- ERROR: _chdir fails");
 		  OrthancPluginLogWarning(context, buffer);
 	  }
-
-	  logCwd();   // log the current working directory
 
 	  // write DICOM file to disc
 	  sprintf(buffer, "%d.dcm", count);
@@ -347,10 +296,8 @@ OrthancPluginErrorCode OnStoredCallback(OrthancPluginDicomInstance* instance,
   strcpy(previousSeriesDir, seriesDir);
   count++;
   OrthancPluginLogWarning(context, ">>> cont incremented");
-  OrthancPluginFreeString(context, json);
 
   cdTop(configurationPath);	// Change directory back to the top of the data storage
-  logCwd();   // log the current working directory
   return returnCode;
 }
 
