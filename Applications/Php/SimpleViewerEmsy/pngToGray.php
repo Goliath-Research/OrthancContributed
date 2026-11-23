@@ -5,6 +5,16 @@ ini_set('display_errors', 'On');
 
 $orthancAddress = "http://localhost:8042";
 
+//Scales the PNG through a private temporary file outside the web directory, removed before returning.
+function scalePng($pngFile, $percent) {
+	$tmpFile = tempnam(sys_get_temp_dir(), 'orthanc');
+	file_put_contents($tmpFile, hex2bin($pngFile));
+	exec('"c:\imagick\convert.exe" ' . escapeshellarg('png:' . $tmpFile) . ' "-scale" "' . $percent . '" ' . escapeshellarg('png:' . $tmpFile));
+	$scaled = bin2hex(file_get_contents($tmpFile));
+	unlink($tmpFile);
+	return $scaled;
+	}
+
 $pngFile = bin2hex(file_get_contents($orthancAddress . "/instances/" . $_GET['instance'] . "/image-uint16")); //returns in PNG format
 
 //decodes the PNG file. Wrote this myself because I couldn't find a 12-bit decoder...
@@ -17,18 +27,14 @@ $height = hexdec(substr($pngFile, $posIHDR + 16, 8));
 //NEEDS imagemagick installed. Can't use GD2 because GD2 doesn't work with 12-bit grayscale!
 //if no imagemagick, can try to comment out the lines here and in viewer.php, but hope that PHP has enough memory to process the large image.
 if ($width > 2000 || $height > 2000) {
-	file_put_contents('image.png', hex2bin($pngFile));
 	$width = $width / 4;
 	$height = $height / 4;
-	exec('"c:\imagick\convert.exe" "image.png" "-scale" "25%" "image.png"');
-	$pngFile = bin2hex(file_get_contents("image.png"));
+	$pngFile = scalePng($pngFile, "25%");
 	}
 if ($width > 1000 || $height > 1000) {
-	file_put_contents('image.png', hex2bin($pngFile));
 	$width = $width / 2;
 	$height = $height / 2;
-	exec('"c:\imagick\convert.exe" "image.png" "-scale" "50%" "image.png"');
-	$pngFile = bin2hex(file_get_contents("image.png"));
+	$pngFile = scalePng($pngFile, "50%");
 	}
 
 $lastPos = 0;

@@ -4,9 +4,13 @@
 $orthanc = "http://localhost:8042";
 
 //Function for encode png to mime. I modified this to hard-select $_FILES.
+//The PNG is encoded in memory so the uploaded document is never written to disk.
 function data_uri($mime) {  
-	imagepng(imagecreatefromstring(file_get_contents($_FILES["file"]["tmp_name"])), "scanned.png");
-	$contents = file_get_contents("scanned.png");
+	$image = imagecreatefromstring(file_get_contents($_FILES["file"]["tmp_name"]));
+	ob_start();
+	imagepng($image);
+	$contents = ob_get_clean();
+	imagedestroy($image);
 	$base64   = base64_encode($contents); 
 	return ('data:' . $mime . ';base64,' . $base64);
 	}
